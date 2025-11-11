@@ -8942,7 +8942,7 @@
                         "datatype": "uint8",
                         "dbc2vss":{
                           "interval_ms": 100,
-                          "signal": "NearCrash",
+                          "signal": "SRS_CrashOut_DetectionCrashType",
                           "transform":
                           {
                             "math": "abs(x)"
@@ -8959,7 +8959,7 @@
                         "type": "actuator",
                         "datatype": "uint8",
                         "dbc2vss":{
-                          "signal": "SRS_CrashOut_DetectionCrashType",
+                          "signal": "NearCrash",
                           "transform":
                           {
                             "math": "abc(x)"
