@@ -8970,7 +8970,12 @@
                           "signal": "NearCrash",
                           "transform":
                           {
-                            "math": "abc(x)"
+                            "mapping": [
+                                {"from":0, "to":0},
+                                {"from":1, "to":1},
+                                {"from":2, "to":2},
+                                {"from":3, "to":3}
+                            ]
                           }
                         },
                         "description": "For simulation crash only, proprietary signals mapping.",
