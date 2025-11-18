@@ -15,28 +15,55 @@ class CANMessage:
     def get_data(self):
         return self.msg.data
 
+    def is_extended_id(self) -> bool:
+        return self.msg.is_extended_id
+
+    def get_timestamp(self):
+        return self.msg.timestamp
+
 
 class CANClient:
-    def __init__(self, interface: str = "socketcan", channel: str = "vcan0", bitrate: int = 500000, port: int = None, **kwargs):
+    def __init__(self, interface: str = "socketcan", channel: str = "vcan0", 
+                 bitrate: int = 500000, port: int = None, fd: bool = False, **kwargs):
         self.interface = interface
         self.channel = channel
+        self.bitrate = bitrate
+        self.fd = fd
+        
+        log.info(f"Initializing CAN client: interface={interface}, channel={channel}, bitrate={bitrate}, fd={fd}")
         
         if interface == "kuksa":
             # KUKSA CAN provider configuration
             try:
+                # Try to use kuksa_can_bridge if available
                 from kuksa_can_bridge import CanClient
                 self._kuksa_client = CanClient(
                     can_interface=channel,
-                    can_bitrate=bitrate
+                    can_bitrate=bitrate,
+                    can_fd=fd
                 )
                 self._bus = self._kuksa_client.bus
-                log.info(f"KUKSA CAN bus initialized: {channel} with bitrate {bitrate}")
+                log.info(f"KUKSA CAN bus initialized: {channel} with bitrate {bitrate}, FD={fd}")
             except ImportError:
-                log.error("KUKSA CAN provider not available. Falling back to virtual interface.")
-                self._bus = can.interface.Bus(interface="virtual", channel=channel)
+                log.warning("KUKSA CAN bridge not available, falling back to python-can")
+                # Fallback to standard python-can with appropriate interface
+                system = platform.system().lower()
+                if system == "windows":
+                    # On Windows, try PCAN or fallback to virtual
+                    if "PCAN" in channel.upper():
+                        self._bus = can.interface.Bus(interface="pcan", channel=channel, bitrate=bitrate, fd=fd, **kwargs)
+                    else:
+                        self._bus = can.interface.Bus(interface="virtual", channel=channel, bitrate=bitrate, **kwargs)
+                else:
+                    # On Linux, try socketcan
+                    try:
+                        self._bus = can.interface.Bus(interface="socketcan", channel=channel, bitrate=bitrate, fd=fd, **kwargs)
+                    except Exception as e:
+                        log.warning(f"SocketCAN failed: {e}, using virtual")
+                        self._bus = can.interface.Bus(interface="virtual", channel=channel, bitrate=bitrate, **kwargs)
             except Exception as e:
-                log.error(f"Failed to initialize KUKSA CAN: {e}")
-                self._bus = can.interface.Bus(interface="virtual", channel=channel)
+                log.error(f"Failed to initialize KUKSA CAN: {e}, using virtual fallback")
+                self._bus = can.interface.Bus(interface="virtual", channel=channel, bitrate=bitrate, **kwargs)
                 
         elif interface == "udp_multicast":
             if port is None:
@@ -49,7 +76,8 @@ class CANClient:
                 **kwargs
             )
         else:
-            self._bus = can.interface.Bus(interface=interface, channel=channel, bitrate=bitrate, **kwargs)
+            # Direct python-can interface
+            self._bus = can.interface.Bus(interface=interface, channel=channel, bitrate=bitrate, fd=fd, **kwargs)
         
         log.info(f"CAN bus initialized: {self._bus.channel_info}")
 
@@ -59,72 +87,91 @@ class CANClient:
                 self._kuksa_client.stop()
             else:
                 self._bus.shutdown()
+            log.info("CAN client stopped successfully")
         except Exception as e:
             log.warning(f"Error shutting down CAN bus: {e}")
 
-    def recv(self, timeout: int = 1) -> Optional[CANMessage]:
+    def recv(self, timeout: Optional[float] = 1) -> Optional[CANMessage]:
         try:
             msg = self._bus.recv(timeout)
-        except can.CanError:
+        except can.CanError as e:
+            log.error(f"Error while waiting for recv from CAN: {e}")
             msg = None
-            log.error("Error while waiting for recv from CAN", exc_info=True)
+        except Exception as e:
+            log.error(f"Unexpected error receiving CAN message: {e}")
+            msg = None
+            
         if msg:
             return CANMessage(msg)
         return None
 
-    def send(self, arbitration_id, data):
-        msg = can.Message(arbitration_id=arbitration_id, data=data, is_extended_id=False)
+    def send(self, arbitration_id: int, data: bytes, is_extended_id: bool = False, is_fd: bool = None):
+        if is_fd is None:
+            is_fd = self.fd
+            
+        msg = can.Message(
+            arbitration_id=arbitration_id, 
+            data=data, 
+            is_extended_id=is_extended_id,
+            is_fd=is_fd
+        )
         try:
             self._bus.send(msg)
+            log.debug(f"CAN message sent: ID={arbitration_id:X}, Data={data.hex()}, FD={is_fd}")
         except can.CanError as e:
             log.error(f"Failed to send message via CAN bus: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error sending CAN message: {e}")
+
+    def send_message(self, message: CANMessage):
+        """Send a CANMessage object"""
+        try:
+            self._bus.send(message.msg)
+            log.debug(f"CAN message sent: ID={message.get_arbitration_id():X}")
+        except can.CanError as e:
+            log.error(f"Failed to send CANMessage via CAN bus: {e}")
 
 
-def create_default_client(channel: str = "vcan0", bitrate: int = 500000) -> CANClient:
-    system = platform.system().lower()
-    log.info(f"create_default_client for system={system}")
-
-    try:
-        if system == "windows":
-            # Try KUKSA CAN provider first on Windows
-            try:
-                return CANClient(
-                    interface="kuksa",
-                    channel=channel,  # e.g., "PCAN_USBBUS1", "CAN0", etc.
-                    bitrate=bitrate
-                )
-            except Exception as kuksa_error:
-                log.warning(f"KUKSA CAN initialization failed: {kuksa_error}")
-                log.info("Falling back to UDP multicast")
-                # Fallback to UDP multicast
-                return CANClient(
-                    interface="udp_multicast",
-                    channel="239.0.0.1",  # multicast IP
-                    port=50000            # multicast port
-                )
-        else:
-            # Linux - try socketcan first, then KUKSA as fallback
-            try:
-                return CANClient(interface="socketcan", channel=channel, bitrate=bitrate)
-            except Exception as socketcan_error:
-                log.warning(f"SocketCAN initialization failed: {socketcan_error}")
-                log.info("Trying KUKSA CAN as fallback")
-                return CANClient(interface="kuksa", channel=channel, bitrate=bitrate)
-    except Exception as e:
-        log.error(f"Failed to initialize CAN bus: {e}")
-        log.info("Using virtual CAN as fallback (isolated per-process).")
-        return CANClient(interface="virtual")
-
-
-def create_kuksa_client(channel: str = "vcan0", bitrate: int = 500000, **kwargs) -> CANClient:
+def create_kuksa_client(channel: str = "PCAN_USBBUS1", bitrate: int = 500000, can_fd: bool = False, **kwargs) -> CANClient:
     """
     Factory function specifically for KUKSA CAN provider
     """
-    return CANClient(interface="kuksa", channel=channel, bitrate=bitrate, **kwargs)
+    return CANClient(interface="kuksa", channel=channel, bitrate=bitrate, fd=can_fd, **kwargs)
 
 
-def create_pcan_client(channel: str = "PCAN_USBBUS1", bitrate: int = 500000) -> CANClient:
+def create_default_client(channel: str = None, bitrate: int = 500000, can_fd: bool = False) -> CANClient:
     """
-    Factory function for PCAN devices with KUKSA
+    Create appropriate CAN client based on platform
     """
-    return create_kuksa_client(channel=channel, bitrate=bitrate)
+    system = platform.system().lower()
+    
+    if channel is None:
+        channel = "vcan0" if system != "windows" else "PCAN_USBBUS1"
+    
+    log.info(f"Creating default CAN client for system={system}, channel={channel}")
+    
+    try:
+        if system == "windows":
+            # On Windows, prefer KUKSA CAN provider with PCAN
+            try:
+                return create_kuksa_client(channel=channel, bitrate=bitrate, can_fd=can_fd)
+            except Exception as e:
+                log.warning(f"KUKSA CAN initialization failed: {e}")
+                # Fallback to virtual interface
+                return CANClient(interface="virtual", channel=channel, bitrate=bitrate, fd=can_fd)
+        else:
+            # On Linux, try socketcan first
+            try:
+                return CANClient(interface="socketcan", channel=channel, bitrate=bitrate, fd=can_fd)
+            except Exception as e:
+                log.warning(f"SocketCAN initialization failed: {e}")
+                # Fallback to KUKSA or virtual
+                try:
+                    return create_kuksa_client(channel=channel, bitrate=bitrate, can_fd=can_fd)
+                except Exception:
+                    log.info("Using virtual CAN as fallback")
+                    return CANClient(interface="virtual", channel=channel, bitrate=bitrate, fd=can_fd)
+    except Exception as e:
+        log.error(f"Failed to initialize CAN bus: {e}")
+        log.info("Using virtual CAN as final fallback")
+        return CANClient(interface="virtual", channel=channel, bitrate=bitrate, fd=can_fd)

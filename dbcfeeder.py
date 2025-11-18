@@ -41,6 +41,7 @@ from cantools.database import Message
 from kuksa_client.grpc import EntryUpdate  # type: ignore
 
 from dbcfeederlib.canclient import CANClient
+from dbcfeederlib.canclient import create_kuksa_client
 from dbcfeederlib.canreader import CanReader
 from dbcfeederlib import dbc2vssmapper
 from dbcfeederlib import dbcreader
@@ -169,7 +170,12 @@ class Feeder:
             log.debug("3 = true ? self._vss2dbc_enabled: %s", self._vss2dbc_enabled)
             log.debug("self._mapper.has_vss2dbc_mapping(): %s", self._mapper.has_vss2dbc_mapping())
             log.debug("self._kuksa_client.supports_subscription(): %s", self._kuksa_client.supports_subscription())
-            self._canclient = CANClient(interface="kuksa", channel="PCAN_USBBUS1",bitrate=500000, fd=can_fd)
+            # self._canclient = CANClient(interface="kuksa", channel="PCAN_USBBUS1",bitrate=500000, fd=can_fd)
+            self._canclient = create_kuksa_client(
+                channel="PCAN_USBBUS1", 
+                bitrate=500000, 
+                can_fd=can_fd  
+                )
             '''
             Set CAN0 abit:500000 failed! --> check
 
