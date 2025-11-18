@@ -169,7 +169,7 @@ class Feeder:
             log.debug("3 = true ? self._vss2dbc_enabled: %s", self._vss2dbc_enabled)
             log.debug("self._mapper.has_vss2dbc_mapping(): %s", self._mapper.has_vss2dbc_mapping())
             log.debug("self._kuksa_client.supports_subscription(): %s", self._kuksa_client.supports_subscription())
-            self._canclient = CANClient(interface="socketcan", channel=canport, fd=can_fd)
+            self._canclient = CANClient(interface="kuksa", channel="PCAN_USBBUS1",bitrate=500000, fd=can_fd)
             '''
             Set CAN0 abit:500000 failed! --> check
 
