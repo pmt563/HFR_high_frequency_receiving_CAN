@@ -8958,7 +8958,7 @@
                         "apiName": "Vehicle.CrashOutput.InjectionCrashType",
                         "type": "actuator",
                         "datatype": "uint8",
-                        "dbc2vss":{
+                        "vss2dbc":{
                           "signal": "NearCrash",
                           "transform":
                           {
