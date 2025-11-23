@@ -20,11 +20,12 @@
 
 import threading
 import logging
+import platform  # THÊM IMPORT NÀY
 
 from queue import Queue
 from typing import Optional
 
-from dbcfeederlib.canclient import CANClient
+from dbcfeederlib.canclient import CANClient, create_default_client
 from dbcfeederlib import canreader
 from dbcfeederlib import dbc2vssmapper
 
@@ -48,7 +49,33 @@ class DBCReader(canreader.CanReader):
         log.info("Stopped receiving CAN messages from bus")
 
     def _start_can_bus_listener(self):
-        self._canclient = CANClient(**self._can_kwargs)
+        try:
+            # THÊM XỬ LÝ LỖI VÀ FALLBACK
+            system = platform.system().lower()
+            if system == "windows":
+                # Trên Windows, ưu tiên dùng virtual interface
+                try:
+                    self._canclient = create_default_client(
+                        channel=self._can_kwargs["channel"],
+                        bitrate=500000,
+                        can_fd=self._can_kwargs.get("fd", False)
+                    )
+                    log.info("✓ Using default CAN client for Windows")
+                except Exception as e:
+                    log.error(f"Failed to create default CAN client: {e}")
+                    # Fallback cuối cùng
+                    self._canclient = CANClient(interface="virtual", channel="virtual_channel", bitrate=500000)
+                    log.info("✓ Using virtual CAN client as fallback")
+            else:
+                # Trên Linux, dùng tham số bình thường
+                self._canclient = CANClient(**self._can_kwargs)
+                
+        except Exception as e:
+            log.error(f"Failed to initialize CAN client: {e}")
+            # Fallback cuối cùng
+            self._canclient = CANClient(interface="virtual", channel="virtual_channel", bitrate=500000)
+            log.info("✓ Using virtual CAN client as final fallback")
+            
         rx_thread = threading.Thread(target=self._rx_worker)
         rx_thread.start()
         log.info("[_DBC_reader.rx_thread] Started CAN bus listener thread %s", rx_thread.name)
@@ -57,4 +84,3 @@ class DBCReader(canreader.CanReader):
     def _stop_can_bus_listener(self):
         self._canclient.stop()
         log.info("Stopped CAN bus listener thread %s", threading.current_thread().name)
-

@@ -1,0 +1,65 @@
+classDiagram
+    class Feeder {
+        -_running: bool
+        -_kuksa_client: ClientWrapper
+        -_canclient: CANClient
+        +start()
+        +stop()
+        -_process_can_messages()
+        -_process_vss_updates()
+    }
+
+    class CANClient {
+        -_bus
+        -_kuksa_client
+        +recv() CANMessage
+        +send(arbitration_id, data)
+        +stop()
+    }
+
+    class CANMessage {
+        -msg: can.Message
+        +get_arbitration_id() int
+        +get_data() bytes
+        +is_extended_id() bool
+        +get_timestamp() float
+    }
+
+    class ClientWrapper {
+        <<abstract>>
+        +start()
+        +stop()
+        +update_datapoint(path, value) bool
+        +subscribe(paths, callback)
+        +is_connected() bool
+        +supports_subscription() bool
+    }
+
+    class DatabrokerClientWrapper {
+        +update_datapoint(path, value) bool
+        +subscribe(paths, callback)
+    }
+
+    class ServerClientWrapper {
+        +update_datapoint(path, value) bool
+        +subscribe(paths, callback)
+    }
+
+    class LoggingClientWrapper {
+        +update_datapoint(path, value) bool
+        +subscribe(paths, callback)
+    }
+
+    %% Core relationships
+    Feeder --> CANClient : uses
+    Feeder --> ClientWrapper : uses
+
+    CANClient --> CANMessage : creates
+
+    ClientWrapper <|-- DatabrokerClientWrapper
+    ClientWrapper <|-- ServerClientWrapper
+    ClientWrapper <|-- LoggingClientWrapper
+
+    %% CAN Interface implementations (simplified)
+    CANClient --> can.interface.Bus : uses
+    CANClient --> kuksa_can_bridge.CanClient : optional

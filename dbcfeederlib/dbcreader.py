@@ -20,12 +20,11 @@
 
 import threading
 import logging
-import platform  # THÊM IMPORT NÀY
 
 from queue import Queue
 from typing import Optional
 
-from dbcfeederlib.canclient import CANClient, create_default_client
+from dbcfeederlib.canclient import CANClient
 from dbcfeederlib import canreader
 from dbcfeederlib import dbc2vssmapper
 
@@ -38,44 +37,18 @@ class DBCReader(canreader.CanReader):
         super().__init__(rxqueue, mapper, can_port, dump_file, can_fd=can_fd)
 
     def _rx_worker(self):
-
-        log.info("Starting to receive CAN messages fom bus")
+        log.info("Starting to receive CAN messages from bus")
         while self.is_running():
-            msg = self._canclient.recv(timeout=1)
-            if msg is not None:
-                log.debug("Processing CAN message with frame ID %#x", msg.get_arbitration_id())
-                log.debug("Type of ID: %s - data:%s", type(msg.get_arbitration_id()), type(msg.get_data()))
-                self._process_can_message(msg.get_arbitration_id(), msg.get_data())
+            msgs = self._canclient.recv_all()  # Dùng recv_all thay vì recv
+            for msg in msgs:
+                if msg is not None:
+                    log.debug("Processing CAN message with frame ID %#x", msg.get_arbitration_id())
+                    log.debug("Type of ID: %s - data:%s", type(msg.get_arbitration_id()), type(msg.get_data()))
+                    self._process_can_message(msg.get_arbitration_id(), msg.get_data())
         log.info("Stopped receiving CAN messages from bus")
 
     def _start_can_bus_listener(self):
-        try:
-            # THÊM XỬ LÝ LỖI VÀ FALLBACK
-            system = platform.system().lower()
-            if system == "windows":
-                # Trên Windows, ưu tiên dùng virtual interface
-                try:
-                    self._canclient = create_default_client(
-                        channel=self._can_kwargs["channel"],
-                        bitrate=500000,
-                        can_fd=self._can_kwargs.get("fd", False)
-                    )
-                    log.info("✓ Using default CAN client for Windows")
-                except Exception as e:
-                    log.error(f"Failed to create default CAN client: {e}")
-                    # Fallback cuối cùng
-                    self._canclient = CANClient(interface="virtual", channel="virtual_channel", bitrate=500000)
-                    log.info("✓ Using virtual CAN client as fallback")
-            else:
-                # Trên Linux, dùng tham số bình thường
-                self._canclient = CANClient(**self._can_kwargs)
-                
-        except Exception as e:
-            log.error(f"Failed to initialize CAN client: {e}")
-            # Fallback cuối cùng
-            self._canclient = CANClient(interface="virtual", channel="virtual_channel", bitrate=500000)
-            log.info("✓ Using virtual CAN client as final fallback")
-            
+        self._canclient = CANClient(**self._can_kwargs)
         rx_thread = threading.Thread(target=self._rx_worker)
         rx_thread.start()
         log.info("[_DBC_reader.rx_thread] Started CAN bus listener thread %s", rx_thread.name)
@@ -84,3 +57,4 @@ class DBCReader(canreader.CanReader):
     def _stop_can_bus_listener(self):
         self._canclient.stop()
         log.info("Stopped CAN bus listener thread %s", threading.current_thread().name)
+
