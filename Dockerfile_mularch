@@ -47,9 +47,20 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
         echo "Unsupported architecture: $TARGETARCH" && exit 1; \
     fi
 
+RUN echo 'from PyInstaller.utils.hooks import collect_all' > hook-backports.py
+RUN echo 'datas, binaries, hiddenimports = collect_all("backports")' >> hook-backports.py
+
 # By default, use certificates and tokens from kuksa_client
 # RUN pyinstaller --collect-data kuksa_client --hidden-import can.interfaces.socketcan --add-binary ./dbcfeederlib/libcontrolcanfd.so:dbcfeederlib --clean -F -s dbcfeeder.py
-RUN pyinstaller dbcfeeder.spec
+RUN pyinstaller \
+    --collect-data kuksa_client \
+    --hidden-import can.interfaces.socketcan \
+    --hidden-import backports \
+    --hidden-import backports.ssl_match_hostname \
+    --hidden-import pkg_resources.py2_warn \
+    --additional-hooks-dir=. \
+    --add-binary ./dbcfeederlib/libcontrolcanfd.so:dbcfeederlib \
+    --clean -F -s dbcfeeder.py
 
 WORKDIR /dist
 
