@@ -48,7 +48,8 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     fi
 
 # By default, use certificates and tokens from kuksa_client
-RUN pyinstaller --collect-data kuksa_client --hidden-import can.interfaces.socketcan --add-binary ./dbcfeederlib/libcontrolcanfd.so:dbcfeederlib --clean -F -s dbcfeeder.py
+# RUN pyinstaller --collect-data kuksa_client --hidden-import can.interfaces.socketcan --add-binary ./dbcfeederlib/libcontrolcanfd.so:dbcfeederlib --clean -F -s dbcfeeder.py
+RUN pyinstaller dbcfeeder.spec
 
 WORKDIR /dist
 
