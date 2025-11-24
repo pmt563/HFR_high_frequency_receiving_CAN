@@ -41,14 +41,12 @@ from cantools.database import Message
 from kuksa_client.grpc import EntryUpdate  # type: ignore
 
 from dbcfeederlib.canclient import CANClient
-from dbcfeederlib.canclient import create_kuksa_client
 from dbcfeederlib.canreader import CanReader
 from dbcfeederlib import dbc2vssmapper
 from dbcfeederlib import dbcreader
 from dbcfeederlib import j1939reader
 from dbcfeederlib import databrokerclientwrapper
 from dbcfeederlib import serverclientwrapper
-from dbcfeederlib import loggingclientwrapper
 from dbcfeederlib import clientwrapper
 from dbcfeederlib import elm2canbridge
 
@@ -76,7 +74,7 @@ class ServerType(str, enum.Enum):
     """Enum class to indicate type of server dbcfeeder is connecting to"""
     KUKSA_VAL_SERVER = 'kuksa_val_server'
     KUKSA_DATABROKER = 'kuksa_databroker'
-    OFFLINE_LOGGING = 'offline_logging'
+
 
 class Feeder:
     """
@@ -170,26 +168,7 @@ class Feeder:
             log.debug("3 = true ? self._vss2dbc_enabled: %s", self._vss2dbc_enabled)
             log.debug("self._mapper.has_vss2dbc_mapping(): %s", self._mapper.has_vss2dbc_mapping())
             log.debug("self._kuksa_client.supports_subscription(): %s", self._kuksa_client.supports_subscription())
-            # self._canclient = CANClient(interface="kuksa", channel="PCAN_USBBUS1",bitrate=500000, fd=can_fd)
-            try:
-                self._canclient = create_kuksa_client(
-                    channel=canport,  # DÙNG canport THAY VÌ hardcode "PCAN_USBBUS1"
-                    bitrate=500000, 
-                    can_fd=can_fd  
-                )
-                log.info("✓ KUKSA CAN client created successfully")
-            except Exception as e:
-                log.error(f"✗ Failed to create KUKSA CAN client: {e}")
-                log.info("Falling back to virtual CAN interface")
-                try:
-                    from dbcfeederlib.canclient import create_default_client
-                    self._canclient = create_default_client(channel="virtual", bitrate=500000, can_fd=can_fd)
-                    log.info("✓ Virtual CAN client created as fallback")
-                except Exception as fallback_error:
-                    log.error(f"✗ Virtual CAN fallback also failed: {fallback_error}")
-                    log.info("Disabling VAL2DBC functionality")
-                    self._vss2dbc_enabled = False
-                    return
+            self._canclient = CANClient(interface="socketcan", channel=canport, fd=can_fd)
             '''
             Set CAN0 abit:500000 failed! --> check
 
@@ -421,8 +400,6 @@ def _get_kuksa_val_client(command_line_parser: argparse.Namespace,
         client: clientwrapper.ClientWrapper = serverclientwrapper.ServerClientWrapper()
     elif server_type is ServerType.KUKSA_DATABROKER:
         client = databrokerclientwrapper.DatabrokerClientWrapper()
-    elif server_type is ServerType.OFFLINE_LOGGING:
-        client = loggingclientwrapper.LoggingClientWrapper()
     else:
         raise ValueError(f"Unsupported server type: {server_type}")
 
@@ -461,18 +438,7 @@ def _get_kuksa_val_client(command_line_parser: argparse.Namespace,
 
 
 def _get_command_line_args_parser() -> argparse.ArgumentParser:
-
-
     parser = argparse.ArgumentParser(description="dbcfeeder")
-    # Argument to disable use of Data broker
-    parser.add_argument(
-        "--no-broker",
-        action="store_true",
-        default=False,
-        help="Don't use Data broker",
-    )
-    # end Argument to disable use of Data broker
-
     parser.add_argument("--config", metavar="FILE", help="The file to read configuration properties from")
     parser.add_argument(
         "--dbcfile", metavar="FILE", help="A (comma sparated) list of DBC files to read message definitions from."
@@ -698,4 +664,3 @@ if __name__ == "__main__":
     # os.chdir(os.path.dirname(__file__))
 
     sys.exit(main(sys.argv))
-    

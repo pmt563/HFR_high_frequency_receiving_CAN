@@ -39,7 +39,7 @@ class DBCReader(canreader.CanReader):
     def _rx_worker(self):
         log.info("Starting to receive CAN messages from bus")
         while self.is_running():
-            msgs = self._canclient.recv_all()  # Dùng recv_all thay vì recv
+            msgs = self._canclient.recv_all()  
             for msg in msgs:
                 if msg is not None:
                     log.debug("Processing CAN message with frame ID %#x", msg.get_arbitration_id())
